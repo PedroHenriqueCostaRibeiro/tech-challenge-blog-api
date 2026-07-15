@@ -1,0 +1,53 @@
+# Orquestra dois servicos: o banco (db) e a aplicacao (app).
+# Suba tudo com:  docker compose up --build
+
+services:
+  # ---------- Banco de dados PostgreSQL ----------
+  db:
+    image: postgres:17-alpine          # imagem oficial pronta do Postgres
+    container_name: blog-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_DATABASE:-blog}
+    ports:
+      # host:container -> exponho na porta 5433 do seu Windows para
+      # NAO conflitar com o Postgres 17 que voce ja tem na 5432.
+      # No pgAdmin, conecte-se a este banco em localhost:5433.
+      - "5433:5432"
+    volumes:
+      # Volume nomeado: os dados do banco sobrevivem a reinicios/rebuilds.
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # O "app" so inicia depois que este teste indicar que o banco esta pronto.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-blog}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Aplicacao Node/Express ----------
+  app:
+    build: .                           # constroi a imagem a partir do Dockerfile local
+    container_name: blog-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy     # espera o healthcheck do banco passar
+    environment:
+      PORT: 3000
+      # ATENCAO: dentro da rede do compose, o host do banco NAO e "localhost",
+      # e sim o nome do servico -> "db". O Docker resolve esse nome via DNS interno.
+      DB_HOST: db
+      DB_PORT: 5432                     # porta interna do contêiner do banco
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_DATABASE: ${DB_DATABASE:-blog}
+      DB_SYNCHRONIZE: "true"           # cria a tabela posts automaticamente
+      DB_LOGGING: "false"
+    ports:
+      - "3000:3000"                    # acessivel em http://localhost:3000
+
+# Declaracao do volume nomeado usado pelo servico db
+volumes:
+  pgdata:

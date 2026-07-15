@@ -1,0 +1,47 @@
+### Testes manuais da API de Blogging
+### Requer a extensao "REST Client" (humao.rest-client) no VS Code.
+### Clique em "Send Request" acima de cada bloco.
+
+@baseUrl = http://localhost:3000
+
+### Healthcheck
+GET {{baseUrl}}/health
+
+### Listar todos os posts
+GET {{baseUrl}}/posts
+
+### Criar um post
+# @name criar
+POST {{baseUrl}}/posts
+Content-Type: application/json
+
+{
+  "title": "Revolucao Francesa",
+  "content": "Aula sobre 1789 e seus impactos.",
+  "author": "Prof. Maria"
+}
+
+### Ler um post pelo id (usa o id do post criado acima)
+GET {{baseUrl}}/posts/{{criar.response.body.id}}
+
+### Buscar posts por palavra-chave
+GET {{baseUrl}}/posts/search?q=revolucao
+
+### Editar o post criado acima
+PUT {{baseUrl}}/posts/{{criar.response.body.id}}
+Content-Type: application/json
+
+{
+  "content": "Conteudo atualizado da aula."
+}
+
+### Excluir o post criado acima
+DELETE {{baseUrl}}/posts/{{criar.response.body.id}}
+
+### Validacao: criar sem campos obrigatorios (espera 400)
+POST {{baseUrl}}/posts
+Content-Type: application/json
+
+{
+  "title": ""
+}
