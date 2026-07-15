@@ -1,0 +1,31 @@
+name: CI
+
+# Quando o robô deve rodar:
+on:
+  push:
+    branches: [ "main" ]        # a cada envio para a branch main
+  pull_request:
+    branches: [ "main" ]        # e em pull requests para a main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest      # o robô roda numa máquina Linux limpa
+
+    steps:
+      - name: Baixar o codigo do repositorio
+        uses: actions/checkout@v4          # traz seu código para a máquina do robô
+
+      - name: Configurar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm                       # acelera reaproveitando o cache do npm
+
+      - name: Instalar dependencias
+        run: npm ci                        # instalação limpa, baseada no package-lock
+
+      - name: Compilar o TypeScript
+        run: npm run build                 # valida que o código compila sem erros
+
+      - name: Rodar os testes (se existirem)
+        run: npm test --if-present         # roda os testes; se ainda não houver, ignora
