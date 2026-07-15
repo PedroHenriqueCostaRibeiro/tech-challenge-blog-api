@@ -29,3 +29,22 @@ jobs:
 
       - name: Rodar os testes (se existirem)
         run: npm test --if-present         # roda os testes; se ainda não houver, ignora
+
+  # Job de deploy: roda DEPOIS do build, apenas em push na branch main.
+  deploy:
+    name: Deploy no Render
+    needs: build                           # só executa se o job "build" passar
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Disparar deploy (Render Deploy Hook)
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}   # secret configurado no GitHub (Parte 5)
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK ainda nao configurado; pulando deploy."
+            exit 0
+          fi
+          curl -fsSL -X POST "$HOOK"
+
