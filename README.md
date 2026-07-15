@@ -1,6 +1,6 @@
-# Tech Challenge — API de Blogging
+# Tech Challenge — API de Blog Academico
 
-API REST para uma plataforma de blogging dinâmico voltada a **professores(as) e
+API REST para uma plataforma de blog Academico dinâmico voltada a **professores(as) e
 alunos(as) da rede pública de educação**. Este projeto é a refatoração do back-end
 (originalmente construído em OutSystems) para uma stack moderna em **Node.js +
 Express + TypeScript**, com persistência em **PostgreSQL** via **TypeORM**,
