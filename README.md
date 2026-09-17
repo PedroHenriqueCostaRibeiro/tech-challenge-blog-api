@@ -11,6 +11,7 @@ containerizado com **Docker** e com pipeline de **CI/CD no GitHub Actions**.
 ## Sumário
 
 - [Arquitetura do sistema](#arquitetura-do-sistema)
+- [Autenticação e autorização](#autenticação-e-autorização)
 - [Tecnologias](#tecnologias)
 - [Como executar](#como-executar)
 - [Uso da aplicação (endpoints)](#uso-da-aplicação-endpoints)
@@ -46,9 +47,9 @@ flowchart LR
 | --- | --- | --- |
 | **Rotas** | Mapeiam URL + método HTTP para um controller | `src/routes/` |
 | **Controllers** | Recebem a requisição, chamam o service e devolvem a resposta | `src/controllers/` |
-| **Services** | Concentram as regras de negócio (validação, "não encontrado", busca) | `src/services/` |
+| **Services** | Concentram as regras de negócio (validação, "não encontrado", busca, login) | `src/services/` |
 | **Entidades** | Modelo de dados mapeado para a tabela via TypeORM | `src/entities/` |
-| **Middlewares** | Tratamento central de erros e rota 404 | `src/middlewares/` |
+| **Middlewares** | Autenticação (`ensureAuth`), autorização (`ensureRole`), tratamento central de erros e rota 404 | `src/middlewares/` |
 | **Config** | `DataSource` do TypeORM (conexão com o banco) | `src/config/` |
 
 ### Estrutura de pastas
@@ -57,12 +58,14 @@ flowchart LR
 .
 ├── src/
 │   ├── config/          # DataSource do TypeORM (conexão)
-│   ├── entities/        # Entidade Post (modelo de dados)
-│   ├── services/        # Regras de negócio (PostService)
-│   ├── controllers/     # Handlers HTTP (PostController)
+│   ├── database/        # Script de seed (professores de demonstração)
+│   ├── entities/        # Entidades Post e User (modelo de dados)
+│   ├── services/        # Regras de negócio (PostService, AuthService)
+│   ├── controllers/     # Handlers HTTP (PostController, AuthController)
 │   ├── routes/          # Definição das rotas
-│   ├── middlewares/     # errorHandler + notFound
+│   ├── middlewares/     # ensureAuth/ensureRole + errorHandler + notFound
 │   ├── errors/          # Classe AppError (erro com status HTTP)
+│   ├── types/           # Ampliação de tipos do Express (req.user)
 │   ├── app.ts           # Configuração do Express
 │   └── server.ts        # Ponto de entrada (conecta ao banco e sobe o servidor)
 ├── tests/               # Testes unitários (Jest)
@@ -85,6 +88,69 @@ A entidade **`Post`** (tabela `posts`):
 | `created_at` | timestamp | preenchido automaticamente |
 | `updated_at` | timestamp | atualizado automaticamente a cada edição |
 
+A entidade **`User`** (tabela `users`) — docentes que podem escrever no blog:
+
+| Campo | Tipo | Observação |
+| --- | --- | --- |
+| `id` | UUID | chave primária gerada automaticamente |
+| `name` | varchar(120) | nome exibido do(a) docente |
+| `email` | varchar(180) | único; usado como login |
+| `password_hash` | varchar(60) | hash **bcrypt**; a senha em texto puro nunca é gravada |
+| `role` | varchar(20) | papel do usuário (`teacher`) |
+| `created_at` / `updated_at` | timestamp | preenchidos automaticamente |
+
+> 🔒 A coluna `password_hash` é declarada com `select: false`: ela fica de fora das
+> consultas normais, então nenhum endpoint devolve o hash por acidente. Só o login
+> a solicita explicitamente.
+
+---
+
+## Autenticação e autorização
+
+A API usa **JWT (JSON Web Token)** com senhas hasheadas em **bcrypt**. A divisão de acesso
+acompanha os dois perfis da plataforma:
+
+| Perfil | O que pode fazer |
+| --- | --- |
+| **Visitante / estudante** | Ler o blog: listar, buscar e abrir posts — sem conta |
+| **Docente autenticado** | Tudo acima, mais criar, editar e excluir postagens |
+
+```mermaid
+sequenceDiagram
+    participant F as Front-end
+    participant A as API
+    participant DB as PostgreSQL
+
+    F->>A: POST /auth/login { email, password }
+    A->>DB: busca usuário + password_hash
+    A->>A: bcrypt.compare(senha, hash)
+    A-->>F: { token, user }
+    Note over F: guarda o token
+    F->>A: POST /posts + Authorization: Bearer <token>
+    A->>A: ensureAuth valida o token → ensureRole exige "teacher"
+    A-->>F: 201 Created
+```
+
+**Fluxo de proteção:** `ensureAuth` valida o cabeçalho `Authorization: Bearer <token>` e
+preenche `req.user`; em seguida `ensureRole("teacher")` confere o papel. As rotas `GET`
+permanecem públicas de propósito — estudantes consomem o blog sem login.
+
+### Criando os docentes de demonstração
+
+```bash
+npm run seed
+```
+
+O script é idempotente (rodar de novo não duplica ninguém) e cria:
+
+| Email | Senha |
+| --- | --- |
+| `maria@escola.edu.br` | `senha123` |
+| `joao@escola.edu.br` | `senha123` |
+
+> ⚠️ São credenciais de **demonstração**, para desenvolvimento e para o vídeo de
+> apresentação. Não use este seed em um ambiente real.
+
 ---
 
 ## Tecnologias
@@ -93,6 +159,7 @@ A entidade **`Post`** (tabela `posts`):
 - **TypeScript** — tipagem estática
 - **TypeORM** — ORM e mapeamento das entidades
 - **PostgreSQL** — banco de dados relacional
+- **JWT** (`jsonwebtoken`) + **bcryptjs** — autenticação e hash de senhas
 - **Jest** + **ts-jest** — testes unitários e cobertura
 - **Docker** / **Docker Compose** — containerização
 - **GitHub Actions** — CI/CD
@@ -133,7 +200,17 @@ cp .env.example .env
 npm run dev
 ```
 
-Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a aplicação.
+Com `DB_SYNCHRONIZE=true`, as tabelas `posts` e `users` são criadas automaticamente ao
+subir a aplicação.
+
+### Criando os usuários iniciais
+
+Depois de subir a aplicação (por qualquer uma das opções acima), crie os docentes de
+demonstração — sem eles não há como fazer login:
+
+```bash
+npm run seed
+```
 
 ### Variáveis de ambiente
 
@@ -147,8 +224,19 @@ Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a
 | `DB_DATABASE` | `blog` | Nome do banco |
 | `DB_SYNCHRONIZE` | `true` | Cria/atualiza tabelas a partir das entidades (usar só em dev) |
 | `DB_LOGGING` | `false` | Loga as queries SQL |
+| `JWT_SECRET` | — | **Obrigatória.** Segredo que assina os tokens |
+| `JWT_EXPIRES_IN` | `8h` | Validade do token |
 
 > ⚠️ O arquivo `.env` **não é versionado** (está no `.gitignore`), pois contém credenciais. Use o `.env.example` como referência.
+
+> 🔑 `JWT_SECRET` **não tem valor padrão no código**, e isso é proposital: um segredo de
+> fallback versionado permitiria a qualquer pessoa forjar um token de professor em produção.
+> Se a variável faltar, a API responde `500` no login em vez de assinar com um valor inseguro.
+> Gere um segredo forte com:
+>
+> ```bash
+> node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+> ```
 
 ---
 
@@ -156,15 +244,38 @@ Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a
 
 Base URL local: `http://localhost:3000`
 
-| Método | Rota | Descrição |
-| --- | --- | --- |
-| `GET` | `/posts` | Lista todas as postagens |
-| `GET` | `/posts/search?q=termo` | Busca posts por palavra-chave (no título ou conteúdo) |
-| `GET` | `/posts/:id` | Retorna uma postagem pelo id |
-| `POST` | `/posts` | Cria uma nova postagem |
-| `PUT` | `/posts/:id` | Edita uma postagem existente |
-| `DELETE` | `/posts/:id` | Exclui uma postagem |
-| `GET` | `/health` | Healthcheck da aplicação |
+| Método | Rota | Acesso | Descrição |
+| --- | --- | --- | --- |
+| `POST` | `/auth/login` | 🌐 Público | Autentica e devolve `{ token, user }` |
+| `GET` | `/auth/me` | 🔒 Token | Dados do usuário autenticado |
+| `GET` | `/posts` | 🌐 Público | Lista todas as postagens |
+| `GET` | `/posts/search?q=termo` | 🌐 Público | Busca por palavra-chave (título, conteúdo ou autor) |
+| `GET` | `/posts/:id` | 🌐 Público | Retorna uma postagem pelo id |
+| `POST` | `/posts` | 🔒 Docente | Cria uma nova postagem |
+| `PUT` | `/posts/:id` | 🔒 Docente | Edita uma postagem existente |
+| `DELETE` | `/posts/:id` | 🔒 Docente | Exclui uma postagem |
+| `GET` | `/health` | 🌐 Público | Healthcheck da aplicação |
+
+> 🔒 As rotas protegidas exigem o cabeçalho `Authorization: Bearer <token>`,
+> obtido em `POST /auth/login`.
+
+### Login
+
+```jsonc
+// POST /auth/login
+{ "email": "maria@escola.edu.br", "password": "senha123" }
+
+// 200 OK
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "9f1c...",
+    "name": "Maria Silva",
+    "email": "maria@escola.edu.br",
+    "role": "teacher"
+  }
+}
+```
 
 ### Corpo da requisição (POST / PUT)
 
@@ -194,16 +305,19 @@ Base URL local: `http://localhost:3000`
 | Situação | Status | Corpo |
 | --- | --- | --- |
 | Campos obrigatórios ausentes/vazios | `400` | `{ "error": "Campos obrigatorios ausentes ou vazios: ..." }` |
+| Email ou senha incorretos | `401` | `{ "error": "Email ou senha invalidos." }` |
+| Token ausente, malformado ou expirado | `401` | `{ "error": "Token invalido ou expirado." }` |
+| Papel sem permissão para a ação | `403` | `{ "error": "Voce nao tem permissao para executar esta acao." }` |
 | Post não encontrado | `404` | `{ "error": "Post com id \"...\" nao encontrado." }` |
 | Erro interno | `500` | `{ "error": "Erro interno do servidor." }` |
+
+> O login devolve a **mesma mensagem** para email inexistente e senha errada. É
+> deliberado: mensagens diferentes revelariam quais emails estão cadastrados.
 
 ### Exemplos com curl
 
 ```bash
-# Criar
-curl -X POST http://localhost:3000/posts \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Aula de Historia","content":"Revolucao Francesa...","author":"Prof. Maria"}'
+# --- Leitura: pública, sem token ---
 
 # Listar
 curl http://localhost:3000/posts
@@ -213,14 +327,34 @@ curl "http://localhost:3000/posts/search?q=revolucao"
 
 # Ler por id
 curl http://localhost:3000/posts/<id>
+```
 
-# Editar
+```bash
+# --- Escrita: exige login ---
+
+# 1. Autenticar e guardar o token
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@escola.edu.br","password":"senha123"}' \
+  | node -pe "JSON.parse(require('fs').readFileSync(0)).token")
+
+# 2. Criar
+curl -X POST http://localhost:3000/posts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"Aula de Historia","content":"Revolucao Francesa...","author":"Prof. Maria"}'
+
+# 3. Editar
 curl -X PUT http://localhost:3000/posts/<id> \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"content":"Conteudo atualizado"}'
 
-# Excluir
-curl -X DELETE http://localhost:3000/posts/<id>
+# 4. Excluir
+curl -X DELETE http://localhost:3000/posts/<id> \
+  -H "Authorization: Bearer $TOKEN"
+
+# Sem o cabeçalho Authorization, os três comandos acima respondem 401.
 ```
 
 > 💡 Há também o arquivo **`requests.http`** na raiz: abra no VS Code com a extensão **REST Client** e clique em "Send Request" para testar cada endpoint.
@@ -229,16 +363,20 @@ curl -X DELETE http://localhost:3000/posts/<id>
 
 ## Testes e cobertura
 
-Testes unitários com **Jest**, focados nas regras de negócio (criação, edição, exclusão e busca).
-O repositório do banco é *mockado*, então os testes **rodam sem precisar de um PostgreSQL**.
+Testes unitários com **Jest**, focados nas regras de negócio (criação, edição, exclusão,
+busca, login e proteção de rotas). O repositório do banco é *mockado*, então os testes
+**rodam sem precisar de um PostgreSQL**. Já o `bcrypt` e o `jsonwebtoken` rodam de verdade —
+é justamente a comparação de senha e a assinatura do token que queremos validar.
 
 ```bash
 npm test          # roda os testes com relatório de cobertura
 npm run test:watch  # modo interativo (re-roda ao salvar)
 ```
 
-- **12 testes** cobrindo as funções críticas.
-- Cobertura global de **~44%** — acima do mínimo de **20%** exigido.
+- **38 testes** em 3 suítes: `post.service`, `auth.service` e `ensureAuth`.
+- `auth.service.ts` e `ensureAuth.ts` com **100% de cobertura de linhas** — são as peças
+  que sustentam o requisito de acesso restrito.
+- Cobertura global de **~50%** — acima do mínimo de **20%** exigido.
 - O `jest.config.js` trava um `coverageThreshold` de 20%: se a cobertura cair abaixo, o comando (e o CI) **falha**.
 
 ---
@@ -319,6 +457,33 @@ No requisito de cobertura, o desafio foi testar as regras de negócio **sem** su
 A solução foi *mockar* o repositório do TypeORM, isolando a lógica do `PostService`. Isso deixou
 os testes rápidos e determinísticos — e prontos para rodar no CI, onde não há banco disponível.
 
+### A autenticação que faltava (Fase 3)
+
+Ao iniciar o front-end da Fase 3, o requisito de **acesso restrito às telas de criação,
+edição e administração** expôs uma lacuna do back-end: a API não tinha autenticação
+nenhuma. `POST`, `PUT` e `DELETE /posts` estavam abertos a qualquer pessoa na internet.
+
+Bloquear apenas as telas no React resolveria o requisito só na aparência: bastaria um
+`curl` para escrever no blog, contornando o front inteiro. Ficou claro que a proteção
+precisava viver no servidor, e o front seria apenas o reflexo dela.
+
+A implementação trouxe três decisões que vale registrar:
+
+- **Onde proteger.** Em vez de trancar a API inteira, separamos por verbo: `GET` continua
+  público, porque estudantes precisam ler o blog sem conta; só a escrita exige docente
+  autenticado. O requisito pede login *para professores*, não um muro em volta de tudo.
+- **Segredo sem fallback.** A primeira versão tinha um `JWT_SECRET` padrão no código para
+  "facilitar o desenvolvimento". Percebemos o risco: um segredo versionado no GitHub
+  permitiria a qualquer um forjar um token de professor válido em produção. Trocamos por
+  uma falha explícita quando a variável não existe.
+- **Mensagem de erro única.** Responder "email não encontrado" e "senha incorreta"
+  separadamente entregaria de graça a lista de emails cadastrados a quem tentasse
+  adivinhar. As duas situações devolvem a mesma mensagem — e há um teste que garante isso.
+
+O aprendizado maior foi perceber que segurança de front-end é conveniência de interface,
+não controle de acesso: o navegador é território do usuário, e a única fronteira que
+conta é a do servidor.
+
 ### Balanço
 
 O projeto consolidou, na prática, um ciclo completo de desenvolvimento back-end moderno:
@@ -331,5 +496,8 @@ um obstáculo específico, e resolvê-los foi o que gerou o maior aprendizado.
 
 - Documentação interativa da API com **Swagger/OpenAPI**
 - **Migrations** do TypeORM para produção (desligar `synchronize`)
-- Autenticação/autorização para separar perfis de docente e aluno
+- **Refresh token** e revogação de sessões (hoje o token vale 8h e não é revogável)
+- Vincular cada post ao `User` autor via chave estrangeira (hoje `author` é texto livre)
+- **Rate limiting** no `POST /auth/login` para dificultar ataques de força bruta
+- Comentários nos posts (entidade `Comment`)
 - Ampliar a cobertura de testes (camada de controllers e integração)

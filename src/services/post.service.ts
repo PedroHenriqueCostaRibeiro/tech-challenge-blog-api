@@ -37,6 +37,7 @@ export class PostService {
       where: [
         { title: ILike(`%${query}%`) },
         { content: ILike(`%${query}%`) },
+        { author: ILike(`%${query}%`) },
       ],
       order: { createdAt: "DESC" },
     });

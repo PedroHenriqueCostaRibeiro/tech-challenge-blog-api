@@ -43,8 +43,12 @@ services:
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_DATABASE: ${DB_DATABASE:-blog}
-      DB_SYNCHRONIZE: "true"           # cria a tabela posts automaticamente
+      DB_SYNCHRONIZE: "true"           # cria as tabelas posts e users automaticamente
       DB_LOGGING: "false"
+      # Segredo que assina os JWT. O padrao abaixo serve APENAS para o ambiente
+      # local: em producao, defina JWT_SECRET no .env com um valor aleatorio.
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-nao-use-em-producao}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
     ports:
       - "3000:3000"                    # acessivel em http://localhost:3000
 

@@ -7,13 +7,56 @@
 ### Healthcheck
 GET {{baseUrl}}/health
 
+# =============================================================================
+# AUTENTICACAO
+# Rode "npm run seed" antes, para criar os professores de demonstracao.
+# =============================================================================
+
+### Login (guarda o token para os blocos seguintes)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "maria@escola.edu.br",
+  "password": "senha123"
+}
+
+### Token do professor autenticado, reaproveitado nas rotas de escrita
+@token = {{login.response.body.token}}
+
+### Dados do usuario logado (reidrata a sessao no front)
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Login com senha errada (espera 401)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "maria@escola.edu.br",
+  "password": "senha-errada"
+}
+
+# =============================================================================
+# LEITURA — rotas publicas, nao exigem token
+# =============================================================================
+
 ### Listar todos os posts
 GET {{baseUrl}}/posts
+
+### Buscar posts por palavra-chave (titulo, conteudo ou autor)
+GET {{baseUrl}}/posts/search?q=revolucao
+
+# =============================================================================
+# ESCRITA — exigem professor autenticado
+# =============================================================================
 
 ### Criar um post
 # @name criar
 POST {{baseUrl}}/posts
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "Revolucao Francesa",
@@ -24,12 +67,10 @@ Content-Type: application/json
 ### Ler um post pelo id (usa o id do post criado acima)
 GET {{baseUrl}}/posts/{{criar.response.body.id}}
 
-### Buscar posts por palavra-chave
-GET {{baseUrl}}/posts/search?q=revolucao
-
 ### Editar o post criado acima
 PUT {{baseUrl}}/posts/{{criar.response.body.id}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "content": "Conteudo atualizado da aula."
@@ -37,10 +78,37 @@ Content-Type: application/json
 
 ### Excluir o post criado acima
 DELETE {{baseUrl}}/posts/{{criar.response.body.id}}
+Authorization: Bearer {{token}}
 
-### Validacao: criar sem campos obrigatorios (espera 400)
+# =============================================================================
+# VALIDACAO E PROTECAO
+# =============================================================================
+
+### Criar sem token (espera 401)
 POST {{baseUrl}}/posts
 Content-Type: application/json
+
+{
+  "title": "Tentativa sem login",
+  "content": "Nao deve ser criado.",
+  "author": "Anonimo"
+}
+
+### Criar com token invalido (espera 401)
+POST {{baseUrl}}/posts
+Content-Type: application/json
+Authorization: Bearer token-invalido
+
+{
+  "title": "Tentativa com token falso",
+  "content": "Nao deve ser criado.",
+  "author": "Anonimo"
+}
+
+### Criar sem campos obrigatorios (espera 400)
+POST {{baseUrl}}/posts
+Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": ""

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { DataSource } from "typeorm";
 import * as dotenv from "dotenv";
 import { Post } from "../entities/Post";
+import { User } from "../entities/User";
 
 dotenv.config();
 
@@ -23,7 +24,7 @@ export const AppDataSource = new DataSource({
   ssl: useSsl ? { rejectUnauthorized: false } : false,
   synchronize: process.env.DB_SYNCHRONIZE === "true",
   logging: process.env.DB_LOGGING === "true",
-  entities: [Post],
+  entities: [Post, User],
   migrations: ["src/migrations/*.ts"],
   subscribers: [],
 });

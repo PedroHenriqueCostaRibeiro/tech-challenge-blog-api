@@ -7,6 +7,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "seed": "ts-node src/database/seed.ts",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "typeorm": "typeorm-ts-node-commonjs -d src/config/data-source.ts",
@@ -14,12 +15,20 @@
     "migration:run": "npm run typeorm -- migration:run",
     "migration:revert": "npm run typeorm -- migration:revert"
   },
-  "keywords": ["blog", "api", "express", "typeorm", "postgres"],
+  "keywords": [
+    "blog",
+    "api",
+    "express",
+    "typeorm",
+    "postgres"
+  ],
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.12.0",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.20"
@@ -28,8 +37,11 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.12",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.9",
+    "@types/supertest": "^7.2.1",
     "jest": "^29.7.0",
+    "supertest": "^7.2.2",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
