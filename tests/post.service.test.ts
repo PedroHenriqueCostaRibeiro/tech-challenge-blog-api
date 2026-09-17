@@ -33,7 +33,7 @@ describe("PostService.create (criacao)", () => {
   it("cria um post com dados validos e remove espacos em branco", async () => {
     repo.create.mockImplementation((data) => data);
     repo.save.mockResolvedValueOnce({
-      id: "uuid-1",
+      id: "3841afa9-e48e-4afd-8728-87307ff9bf97",
       title: "Aula",
       content: "Conteudo",
       author: "Prof",
@@ -52,7 +52,7 @@ describe("PostService.create (criacao)", () => {
       author: "Prof",
     });
     expect(repo.save).toHaveBeenCalledTimes(1);
-    expect(result.id).toBe("uuid-1");
+    expect(result.id).toBe("3841afa9-e48e-4afd-8728-87307ff9bf97");
   });
 
   it("lanca AppError 400 quando faltam campos obrigatorios", async () => {
@@ -74,14 +74,14 @@ describe("PostService.create (criacao)", () => {
 describe("PostService.update (edicao)", () => {
   it("atualiza os campos informados de um post existente", async () => {
     repo.findOne.mockResolvedValueOnce({
-      id: "uuid-1",
+      id: "3841afa9-e48e-4afd-8728-87307ff9bf97",
       title: "Antigo",
       content: "Antigo",
       author: "Antigo",
     });
     repo.save.mockImplementation(async (data) => data);
 
-    const result = await postService.update("uuid-1", { title: "  Novo  " });
+    const result = await postService.update("3841afa9-e48e-4afd-8728-87307ff9bf97", { title: "  Novo  " });
 
     expect(result.title).toBe("Novo"); // trimado e atualizado
     expect(result.content).toBe("Antigo"); // inalterado
@@ -92,7 +92,7 @@ describe("PostService.update (edicao)", () => {
     repo.findOne.mockResolvedValueOnce(null);
 
     await expect(
-      postService.update("nao-existe", { title: "x" })
+      postService.update("00000000-0000-0000-0000-000000000000", { title: "x" })
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 });
@@ -101,14 +101,14 @@ describe("PostService.delete (exclusao)", () => {
   it("exclui quando o post existe (affected = 1)", async () => {
     repo.delete.mockResolvedValueOnce({ affected: 1 });
 
-    await expect(postService.delete("uuid-1")).resolves.toBeUndefined();
-    expect(repo.delete).toHaveBeenCalledWith({ id: "uuid-1" });
+    await expect(postService.delete("3841afa9-e48e-4afd-8728-87307ff9bf97")).resolves.toBeUndefined();
+    expect(repo.delete).toHaveBeenCalledWith({ id: "3841afa9-e48e-4afd-8728-87307ff9bf97" });
   });
 
   it("lanca AppError 404 quando nada foi excluido (affected = 0)", async () => {
     repo.delete.mockResolvedValueOnce({ affected: 0 });
 
-    await expect(postService.delete("nao-existe")).rejects.toMatchObject({
+    await expect(postService.delete("00000000-0000-0000-0000-000000000000")).rejects.toMatchObject({
       statusCode: 404,
     });
   });
@@ -116,16 +116,16 @@ describe("PostService.delete (exclusao)", () => {
 
 describe("PostService.findById / findAll (leitura)", () => {
   it("retorna o post quando encontrado", async () => {
-    repo.findOne.mockResolvedValueOnce({ id: "uuid-1", title: "Aula" });
+    repo.findOne.mockResolvedValueOnce({ id: "3841afa9-e48e-4afd-8728-87307ff9bf97", title: "Aula" });
 
-    const post = await postService.findById("uuid-1");
-    expect(post.id).toBe("uuid-1");
+    const post = await postService.findById("3841afa9-e48e-4afd-8728-87307ff9bf97");
+    expect(post.id).toBe("3841afa9-e48e-4afd-8728-87307ff9bf97");
   });
 
   it("lanca AppError 404 quando nao encontra o id", async () => {
     repo.findOne.mockResolvedValueOnce(null);
 
-    await expect(postService.findById("nao-existe")).rejects.toMatchObject({
+    await expect(postService.findById("00000000-0000-0000-0000-000000000000")).rejects.toMatchObject({
       statusCode: 404,
     });
   });
@@ -154,5 +154,67 @@ describe("PostService.search (busca)", () => {
 
     expect(repo.find).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(1);
+  });
+});
+
+describe("PostService: id malformado", () => {
+  /**
+   * A coluna "id" e do tipo uuid no Postgres. Consultar com uma string que nao
+   * e UUID faz o proprio banco lancar (string_to_uuid), e o errorHandler trata
+   * isso como erro inesperado -> 500.
+   *
+   * Semanticamente, um id malformado e "nao encontrado", nao "o servidor
+   * quebrou". Por isso a validacao precisa acontecer ANTES da consulta: o
+   * teste verifica que o repositorio nem chega a ser chamado.
+   */
+  const idsInvalidos = ["id-que-nao-existe", "123", "", "  ", "abc-123"];
+
+  it.each(idsInvalidos)(
+    'findById("%s") responde 404 sem consultar o banco',
+    async (id) => {
+      await expect(postService.findById(id)).rejects.toMatchObject({
+        statusCode: 404,
+      });
+
+      expect(repo.findOne).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(idsInvalidos)(
+    'delete("%s") responde 404 sem consultar o banco',
+    async (id) => {
+      await expect(postService.delete(id)).rejects.toMatchObject({
+        statusCode: 404,
+      });
+
+      expect(repo.delete).not.toHaveBeenCalled();
+    }
+  );
+
+  it("update com id malformado responde 404 sem tocar no banco", async () => {
+    await expect(
+      postService.update("nao-e-uuid", { title: "x" })
+    ).rejects.toMatchObject({ statusCode: 404 });
+
+    expect(repo.findOne).not.toHaveBeenCalled();
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it("nao rejeita UUID valido: a validacao nao pode ser rigorosa demais", async () => {
+    const uuidValido = "3841afa9-e48e-4afd-8728-87307ff9bf97";
+    repo.findOne.mockResolvedValueOnce({ id: uuidValido, title: "Aula" });
+
+    const post = await postService.findById(uuidValido);
+
+    expect(post.id).toBe(uuidValido);
+    expect(repo.findOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("aceita UUID em maiusculas", async () => {
+    const uuidMaiusculo = "3841AFA9-E48E-4AFD-8728-87307FF9BF97";
+    repo.findOne.mockResolvedValueOnce({ id: uuidMaiusculo });
+
+    await expect(postService.findById(uuidMaiusculo)).resolves.toBeDefined();
+    expect(repo.findOne).toHaveBeenCalledTimes(1);
   });
 });
