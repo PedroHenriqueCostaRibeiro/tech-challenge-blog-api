@@ -6,6 +6,12 @@ alunos(as) da rede pública de educação**. Este projeto é a refatoração do 
 Express + TypeScript**, com persistência em **PostgreSQL** via **TypeORM**,
 containerizado com **Docker** e com pipeline de **CI/CD no GitHub Actions**.
 
+> 🔗 **Interface (front-end):** [tech-challenge-blog-web](https://github.com/PedroHenriqueCostaRibeiro/tech-challenge-blog-web) — a interface React da Fase 3, que consome esta API.
+>
+> 💡 Para subir **a aplicação inteira** (banco + API + interface) com um comando, use o
+> `docker compose` do repositório da interface. Este repositório também tem um `docker-compose.yml`
+> próprio, que sobe apenas o banco e a API — útil para trabalhar só no back-end.
+
 > 🌐 **Aplicação publicada:** `https://<sua-app>.onrender.com` _(preencher com a URL do Render após o deploy)_
 
 ## Sumário
@@ -85,6 +91,78 @@ A entidade **`Post`** (tabela `posts`):
 | `created_at` | timestamp | preenchido automaticamente |
 | `updated_at` | timestamp | atualizado automaticamente a cada edição |
 
+A entidade **`User`** (tabela `users`) — docentes que podem publicar:
+
+| Campo | Tipo | Observação |
+| --- | --- | --- |
+| `id` | UUID | chave primária gerada automaticamente |
+| `name` | varchar(120) | nome exibido do(a) docente |
+| `email` | varchar(180) | único; é o login |
+| `password_hash` | varchar(60) | hash **bcrypt**; a senha em texto puro nunca é gravada |
+| `created_at` | timestamp | preenchido automaticamente |
+| `updated_at` | timestamp | atualizado automaticamente |
+
+> 🔒 A coluna `password_hash` é declarada com `select: false`, o que a mantém fora das
+> consultas comuns. Nenhum endpoint devolve o hash por acidente — só o login o pede
+> explicitamente.
+
+> 📌 **Não existe coluna de papel.** O único tipo de usuário com conta é o docente;
+> estudantes leem o blog sem login. Um campo de papel teria um valor possível só, e nenhuma
+> decisão dependeria dele.
+
+---
+
+## Autenticação e autorização
+
+A divisão de acesso reflete os dois perfis do produto:
+
+| Quem | Pode |
+| --- | --- |
+| **Visitante / estudante** | Ler e buscar postagens, sem conta |
+| **Docente autenticado** | Tudo acima, mais criar, editar e excluir |
+
+```mermaid
+sequenceDiagram
+    participant F as Front-end
+    participant A as API
+
+    F->>A: POST /auth/login { email, password }
+    A->>A: bcrypt.compare(senha, hash)
+    A-->>F: { token, user }
+    Note over F: guarda o token
+    F->>A: POST /posts + Authorization: Bearer <token>
+    A->>A: ensureAuth valida a assinatura do JWT
+    A-->>F: 201 Created
+```
+
+**Onde a segurança realmente acontece.** Esconder um botão na interface é experiência de uso,
+não proteção: o navegador está sob controle de quem o usa. Quem de fato impede um `curl`
+direto na API é o middleware `ensureAuth`, aplicado às rotas de escrita. O arquivo
+`tests/posts.routes.test.ts` prova isso ponta a ponta, verificando que uma escrita sem token
+responde `401` e **nem chega à regra de negócio**.
+
+Duas escolhas que valem registro:
+
+- **A mensagem de erro do login é a mesma** para e-mail inexistente e senha errada. Mensagens
+  diferentes entregariam a um atacante quais e-mails estão cadastrados — bastaria observar
+  qual erro volta.
+- **`JWT_SECRET` não tem valor padrão no código.** Se a variável faltar, o login responde
+  `500` em vez de assinar tokens com um segredo versionado no Git. É preferível falhar alto a
+  falhar inseguro.
+
+### Uma limitação registrada com honestidade
+
+O campo `author` do post é **texto livre**, digitado no formulário — é o que o requisito do
+desafio pede ("campos para título, conteúdo e autor"). Ele **não é** uma afirmação de
+identidade verificada: nada impede que a professora Maria publique com `author: "Prof. João"`.
+
+A identidade verificada está no JWT, e é ela que a API usa para autorizar a escrita. Ou seja,
+só docentes autenticados publicam — mas o nome exibido é um rótulo, não uma comprovação.
+
+Vincular a postagem ao usuário autenticado (uma chave estrangeira `posts.user_id`) resolveria
+isso, e está registrado em [Próximos passos](#próximos-passos). Ficou de fora desta fase por
+divergir do requisito, que pede o campo de autor preenchível.
+
 ---
 
 ## Tecnologias
@@ -133,7 +211,51 @@ cp .env.example .env
 npm run dev
 ```
 
-Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a aplicação.
+Com `DB_SYNCHRONIZE=true`, as tabelas `posts` e `users` são criadas automaticamente ao subir
+a aplicação.
+
+### Criando os docentes de demonstração
+
+Sem eles não há como fazer login. **O comando depende de como você subiu a aplicação**, e
+escolher o errado leva a um erro silencioso (explicado abaixo).
+
+#### Se você usou a Opção A (Docker)
+
+```bash
+docker compose exec app node dist/database/seed.js
+```
+
+#### Se você usou a Opção B (local, sem Docker)
+
+```bash
+npm run seed
+```
+
+Em ambos os casos o script é idempotente — rodar de novo não duplica ninguém — e cria:
+
+| E-mail | Senha |
+| --- | --- |
+| `maria@escola.edu.br` | `senha123` |
+| `joao@escola.edu.br` | `senha123` |
+
+> ⚠️ São credenciais de **demonstração**, para desenvolvimento e para o vídeo de apresentação.
+> Não use este seed em um ambiente real.
+
+> ⚠️ **Por que não usar `npm run seed` junto com o Docker?**
+>
+> O `npm run seed` roda **na sua máquina** e lê o `.env`, onde `DB_PORT` é `5432` por padrão.
+> Mas o Compose expõe o banco do contêiner na porta **`5433`** (justamente para não colidir
+> com um PostgreSQL instalado nativamente). Resultado: o seed criaria os docentes **no banco
+> errado** — ou falharia — enquanto a API dentro do contêiner continuaria consultando um banco
+> vazio. O login então responde `401 Email ou senha invalidos`, sem nenhuma pista da causa
+> real.
+>
+> Para semear a partir da sua máquina apontando ao banco do contêiner, ajuste `DB_PORT=5433`
+> no `.env` antes de rodar.
+
+> 💡 Dentro do contêiner o comando é `node dist/database/seed.js`, e não `npm run seed`, porque
+> a imagem de produção é instalada com `npm ci --omit=dev` — ela não tem o `ts-node` nem a
+> pasta `src/`, apenas o JavaScript já compilado em `dist/`.
 
 ### Variáveis de ambiente
 
@@ -147,6 +269,8 @@ Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a
 | `DB_DATABASE` | `blog` | Nome do banco |
 | `DB_SYNCHRONIZE` | `true` | Cria/atualiza tabelas a partir das entidades (usar só em dev) |
 | `DB_LOGGING` | `false` | Loga as queries SQL |
+| `JWT_SECRET` | — | **Obrigatória.** Segredo que assina os tokens |
+| `JWT_EXPIRES_IN` | `8h` | Validade do token |
 
 > ⚠️ O arquivo `.env` **não é versionado** (está no `.gitignore`), pois contém credenciais. Use o `.env.example` como referência.
 
@@ -156,15 +280,19 @@ Com `DB_SYNCHRONIZE=true`, a tabela `posts` é criada automaticamente ao subir a
 
 Base URL local: `http://localhost:3000`
 
-| Método | Rota | Descrição |
-| --- | --- | --- |
-| `GET` | `/posts` | Lista todas as postagens |
-| `GET` | `/posts/search?q=termo` | Busca posts por palavra-chave (no título ou conteúdo) |
-| `GET` | `/posts/:id` | Retorna uma postagem pelo id |
-| `POST` | `/posts` | Cria uma nova postagem |
-| `PUT` | `/posts/:id` | Edita uma postagem existente |
-| `DELETE` | `/posts/:id` | Exclui uma postagem |
-| `GET` | `/health` | Healthcheck da aplicação |
+| Método | Rota | Acesso | Descrição |
+| --- | --- | --- | --- |
+| `POST` | `/auth/login` | 🌐 Público | Autentica e devolve `{ token, user }` |
+| `GET` | `/auth/me` | 🔒 Token | Dados do usuário autenticado |
+| `GET` | `/posts` | 🌐 Público | Lista todas as postagens |
+| `GET` | `/posts/search?q=termo` | 🌐 Público | Busca posts por palavra-chave (título, conteúdo ou autor) |
+| `GET` | `/posts/:id` | 🌐 Público | Retorna uma postagem pelo id |
+| `POST` | `/posts` | 🔒 Docente | Cria uma nova postagem |
+| `PUT` | `/posts/:id` | 🔒 Docente | Edita uma postagem existente |
+| `DELETE` | `/posts/:id` | 🔒 Docente | Exclui uma postagem |
+| `GET` | `/health` | 🌐 Público | Healthcheck da aplicação |
+
+Rotas marcadas com 🔒 exigem o cabeçalho `Authorization: Bearer <token>`.
 
 ### Corpo da requisição (POST / PUT)
 
@@ -194,7 +322,9 @@ Base URL local: `http://localhost:3000`
 | Situação | Status | Corpo |
 | --- | --- | --- |
 | Campos obrigatórios ausentes/vazios | `400` | `{ "error": "Campos obrigatorios ausentes ou vazios: ..." }` |
-| Post não encontrado | `404` | `{ "error": "Post com id \"...\" nao encontrado." }` |
+| Sem token, ou token inválido/expirado | `401` | `{ "error": "Token de autenticacao nao informado." }` |
+| Credenciais de login incorretas | `401` | `{ "error": "Email ou senha invalidos." }` |
+| Post não encontrado, ou id malformado | `404` | `{ "error": "Post com id \"...\" nao encontrado." }` |
 | Erro interno | `500` | `{ "error": "Erro interno do servidor." }` |
 
 ### Exemplos com curl
@@ -331,5 +461,6 @@ um obstáculo específico, e resolvê-los foi o que gerou o maior aprendizado.
 
 - Documentação interativa da API com **Swagger/OpenAPI**
 - **Migrations** do TypeORM para produção (desligar `synchronize`)
-- Autenticação/autorização para separar perfis de docente e aluno
 - Ampliar a cobertura de testes (camada de controllers e integração)
+- Vincular a postagem ao docente autenticado (hoje `author` é texto livre, conforme o
+  requisito do desafio — ver a observação em [Autenticação e autorização](#autenticação-e-autorização))

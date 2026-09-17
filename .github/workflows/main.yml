@@ -1,11 +1,15 @@
 name: CI
 
 # Quando o robô deve rodar:
+#
+# Inclui a "dev" porque é nela que o trabalho acontece: rodando só na "main",
+# um problema apareceria apenas depois do merge — tarde demais para ser barato
+# de corrigir. O deploy continua exclusivo da "main" (ver o job abaixo).
 on:
   push:
-    branches: [ "main" ]        # a cada envio para a branch main
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main" ]        # e em pull requests para a main
+    branches: [ "main", "dev" ]
 
 jobs:
   build:

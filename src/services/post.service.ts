@@ -11,6 +11,16 @@ export interface CreatePostDTO {
 
 export type UpdatePostDTO = Partial<CreatePostDTO>;
 
+/**
+ * Formato de um UUID (as versoes que o Postgres aceita na coluna uuid).
+ *
+ * Precisamos dele porque consultar a coluna "id" com uma string que nao e UUID
+ * faz o proprio banco lancar (string_to_uuid), e o erro chegaria ao cliente
+ * como 500 -- quando a resposta correta e 404.
+ */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class PostService {
   private get repository(): Repository<Post> {
     return AppDataSource.getRepository(Post);
@@ -21,6 +31,8 @@ export class PostService {
   }
 
   async findById(id: string): Promise<Post> {
+    this.ensureValidId(id);
+
     const post = await this.repository.findOne({ where: { id } });
     if (!post) {
       throw new AppError(`Post com id "${id}" nao encontrado.`, 404);
@@ -64,8 +76,24 @@ export class PostService {
   }
 
   async delete(id: string): Promise<void> {
+    this.ensureValidId(id);
+
     const result = await this.repository.delete({ id });
     if (!result.affected) {
+      throw new AppError(`Post com id "${id}" nao encontrado.`, 404);
+    }
+  }
+
+  /**
+   * Um id que nem tem forma de UUID nao pode corresponder a nenhum registro,
+   * entao a resposta correta e 404 -- e nao 500, que e o que aconteceria se
+   * deixassemos a string malformada chegar ao banco.
+   *
+   * A validacao acontece ANTES da consulta de proposito: e justamente a
+   * consulta que provoca o erro.
+   */
+  private ensureValidId(id: string): void {
+    if (!UUID_PATTERN.test(id)) {
       throw new AppError(`Post com id "${id}" nao encontrado.`, 404);
     }
   }

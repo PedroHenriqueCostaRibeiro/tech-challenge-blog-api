@@ -7,13 +7,69 @@
 ### Healthcheck
 GET {{baseUrl}}/health
 
+# =============================================================================
+# AUTENTICACAO
+#
+# Crie os docentes de demonstracao antes. Com Docker:
+#   docker compose exec app node dist/database/seed.js
+# Local, sem Docker:
+#   npm run seed
+# =============================================================================
+
+### Login (guarda o token para os blocos seguintes)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "maria@escola.edu.br",
+  "password": "senha123"
+}
+
+### Token do docente autenticado, reaproveitado nas rotas de escrita
+@token = {{login.response.body.token}}
+
+### Dados do usuario logado (o front usa para reidratar a sessao)
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{token}}
+
+### Login com senha errada (espera 401)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "maria@escola.edu.br",
+  "password": "senha-errada"
+}
+
+### Login com email inexistente (espera 401 com a MESMA mensagem acima)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "ninguem@escola.edu.br",
+  "password": "qualquer"
+}
+
+# =============================================================================
+# LEITURA - rotas publicas, nao exigem token
+# =============================================================================
+
 ### Listar todos os posts
 GET {{baseUrl}}/posts
+
+### Buscar posts por palavra-chave (titulo, conteudo ou autor)
+GET {{baseUrl}}/posts/search?q=revolucao
+
+# =============================================================================
+# ESCRITA - exigem docente autenticado
+# =============================================================================
 
 ### Criar um post
 # @name criar
 POST {{baseUrl}}/posts
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "title": "Revolucao Francesa",
@@ -21,15 +77,13 @@ Content-Type: application/json
   "author": "Prof. Maria"
 }
 
-### Ler um post pelo id (usa o id do post criado acima)
+### Ler o post criado acima
 GET {{baseUrl}}/posts/{{criar.response.body.id}}
-
-### Buscar posts por palavra-chave
-GET {{baseUrl}}/posts/search?q=revolucao
 
 ### Editar o post criado acima
 PUT {{baseUrl}}/posts/{{criar.response.body.id}}
 Content-Type: application/json
+Authorization: Bearer {{token}}
 
 {
   "content": "Conteudo atualizado da aula."
@@ -37,11 +91,47 @@ Content-Type: application/json
 
 ### Excluir o post criado acima
 DELETE {{baseUrl}}/posts/{{criar.response.body.id}}
+Authorization: Bearer {{token}}
 
-### Validacao: criar sem campos obrigatorios (espera 400)
+# =============================================================================
+# PROTECAO E VALIDACAO
+# =============================================================================
+
+### Criar sem token (espera 401)
 POST {{baseUrl}}/posts
 Content-Type: application/json
 
 {
+  "title": "Tentativa sem login",
+  "content": "Nao deve ser criado.",
+  "author": "Anonimo"
+}
+
+### Criar com token invalido (espera 401)
+POST {{baseUrl}}/posts
+Content-Type: application/json
+Authorization: Bearer token-forjado
+
+{
+  "title": "Tentativa com token falso",
+  "content": "Nao deve ser criado.",
+  "author": "Anonimo"
+}
+
+### Excluir sem token (espera 401)
+DELETE {{baseUrl}}/posts/00000000-0000-0000-0000-000000000000
+
+### Criar sem campos obrigatorios (espera 400)
+POST {{baseUrl}}/posts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
   "title": ""
 }
+
+### Ler post com id que nao e UUID (espera 404, nao 500)
+GET {{baseUrl}}/posts/id-que-nao-e-uuid
+
+### Ler post com UUID valido mas inexistente (espera 404)
+GET {{baseUrl}}/posts/00000000-0000-0000-0000-000000000000
