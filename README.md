@@ -6,6 +6,12 @@ alunos(as) da rede pública de educação**. Este projeto é a refatoração do 
 Express + TypeScript**, com persistência em **PostgreSQL** via **TypeORM**,
 containerizado com **Docker** e com pipeline de **CI/CD no GitHub Actions**.
 
+> 🔗 **Interface (front-end):** [tech-challenge-blog-web](https://github.com/PedroHenriqueCostaRibeiro/tech-challenge-blog-web) — a interface React da Fase 3, que consome esta API.
+>
+> 💡 Para subir **a aplicação inteira** (banco + API + interface) com um comando, use o
+> `docker compose` do repositório da interface. Este repositório também tem um `docker-compose.yml`
+> próprio, que sobe apenas o banco e a API — útil para trabalhar só no back-end.
+
 > 🌐 **Aplicação publicada:** `https://<sua-app>.onrender.com` _(preencher com a URL do Render após o deploy)_
 
 ## Sumário
