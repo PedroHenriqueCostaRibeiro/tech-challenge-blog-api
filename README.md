@@ -137,9 +137,20 @@ permanecem públicas de propósito — estudantes consomem o blog sem login.
 
 ### Criando os docentes de demonstração
 
+Se você subiu com **Docker**:
+
+```bash
+docker compose exec app node dist/database/seed.js
+```
+
+Se está rodando **local, sem Docker**:
+
 ```bash
 npm run seed
 ```
+
+> 📌 Os dois comandos não são intercambiáveis — veja
+> [Criando os usuários iniciais](#criando-os-usuários-iniciais) para entender por quê.
 
 O script é idempotente (rodar de novo não duplica ninguém) e cria:
 
@@ -205,12 +216,36 @@ subir a aplicação.
 
 ### Criando os usuários iniciais
 
-Depois de subir a aplicação (por qualquer uma das opções acima), crie os docentes de
-demonstração — sem eles não há como fazer login:
+Depois de subir a aplicação, crie os docentes de demonstração — sem eles não há como fazer
+login. **O comando depende da opção que você usou para subir**, e escolher o errado leva a um
+erro silencioso (explicado logo abaixo).
+
+#### Se você usou a Opção A (Docker)
+
+```bash
+docker compose exec app node dist/database/seed.js
+```
+
+#### Se você usou a Opção B (local, sem Docker)
 
 ```bash
 npm run seed
 ```
+
+> ⚠️ **Por que não usar `npm run seed` junto com o Docker?**
+>
+> O `npm run seed` roda **na sua máquina** e lê o `.env`, onde `DB_PORT` é `5432` por padrão.
+> Mas o Compose expõe o banco do contêiner na porta **`5433`** (justamente para não colidir com
+> um PostgreSQL instalado nativamente). Resultado: o seed criaria os docentes **no banco
+> errado** — ou falharia — enquanto a API dentro do contêiner continuaria consultando um banco
+> vazio. O login então responde `401 Email ou senha invalidos`, sem nenhuma pista da causa real.
+>
+> Se ainda assim quiser semear a partir da sua máquina com o banco do contêiner, ajuste
+> `DB_PORT=5433` no `.env` antes de rodar.
+
+> 💡 Dentro do contêiner o comando é `node dist/database/seed.js`, e não `npm run seed`, porque
+> a imagem de produção é instalada com `npm ci --omit=dev` — ela não tem o `ts-node` nem a pasta
+> `src/`, apenas o JavaScript já compilado em `dist/`.
 
 ### Variáveis de ambiente
 

@@ -9,7 +9,10 @@ GET {{baseUrl}}/health
 
 # =============================================================================
 # AUTENTICACAO
-# Rode "npm run seed" antes, para criar os professores de demonstracao.
+# Crie os professores de demonstracao antes. Com Docker:
+#   docker compose exec app node dist/database/seed.js
+# Local, sem Docker:
+#   npm run seed
 # =============================================================================
 
 ### Login (guarda o token para os blocos seguintes)
